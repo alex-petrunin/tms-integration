@@ -6,6 +6,9 @@ on:
       triggerSource:
         description: "Source of trigger"
         required: false
+      triggerId:
+        description: "Unique trigger ID"
+        required: true
 
 jobs:
   build:
