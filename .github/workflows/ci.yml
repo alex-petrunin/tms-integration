@@ -6,3 +6,13 @@ on:
       triggerSource:
         description: "Source of trigger"
         required: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Run example
+        run: echo "Hello from workflow"
