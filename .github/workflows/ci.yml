@@ -6,6 +6,12 @@ on:
       triggerSource:
         description: "Source of trigger (YT issue ID, test repo, etc.)"
         required: false
+      testCaseId:
+        description: "Original Test Case ID"
+        required: true
+      testRunId:
+        description: "Test Run ID of a Test Case"
+        required: true
 
 jobs:
   build:
