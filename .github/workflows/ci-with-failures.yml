@@ -1,0 +1,163 @@
+name: CI with Failure Scenarios
+
+on:
+  workflow_dispatch:
+    inputs:
+      triggerSource:
+        description: "Source of trigger (YT issue ID, test repo, etc.)"
+        required: false
+      testCaseId:
+        description: "Original Test Case ID"
+        required: true
+      testRunId:
+        description: "Test Run ID of a Test Case"
+        required: true
+      failureMode:
+        description: "Type of failure to simulate"
+        required: false
+        default: "none"
+        type: choice
+        options:
+          - none
+          - build-failure
+          - test-failure
+          - timeout
+          - webhook-failure
+          - network-error
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5  # Short timeout for testing
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Simulate build failure
+        if: ${{ github.event.inputs.failureMode == 'build-failure' }}
+        run: |
+          echo "Simulating build failure..."
+          exit 1
+
+      - name: Run tests with potential failure
+        run: |
+          if [ "${{ github.event.inputs.failureMode }}" = "test-failure" ]; then
+            echo "Simulating test failure..."
+            exit 1
+          elif [ "${{ github.event.inputs.failureMode }}" = "timeout" ]; then
+            echo "Simulating timeout..."
+            sleep 600  # 10 minutes - will hit timeout
+          elif [ "${{ github.event.inputs.failureMode }}" = "network-error" ]; then
+            echo "Simulating network error in tests..."
+            # This will succeed but webhook will fail
+            echo "Tests passed but network issues will prevent webhook delivery"
+          else
+            echo "Tests passed successfully!"
+          fi
+
+      - name: Notify YouTrack app
+        if: ${{ always() }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const failureMode = '${{ github.event.inputs.failureMode }}';
+            
+            // Simulate webhook delivery failure
+            if (failureMode === 'webhook-failure') {
+              core.setFailed('Simulating webhook delivery failure');
+              return;
+            }
+            
+            // Simulate network error (use invalid URL)
+            const webhookUrl = failureMode === 'network-error' 
+              ? 'https://invalid-domain-that-does-not-exist.com/webhook'
+              : process.env.CALLBACK_URL;
+            
+            const body = {
+              repository: process.env.GITHUB_REPOSITORY,
+              run_id: process.env.GITHUB_RUN_ID,
+              status: '${{ job.status }}',
+              event: process.env.GITHUB_EVENT_NAME,
+              triggerSource: '${{ github.event.inputs.triggerSource }}',
+              testCaseId: '${{ github.event.inputs.testCaseId }}',
+              testRunId: '${{ github.event.inputs.testRunId }}',
+              timestamp: new Date().toISOString(),
+              failureMode: failureMode
+            };
+
+            console.log('Sending webhook to:', webhookUrl);
+            console.log('Payload:', JSON.stringify(body, null, 2));
+
+            try {
+              const res = await fetch(webhookUrl, {
+                method: 'POST',
+                headers: { 
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${process.env.YOUTRACK_TOKEN}`
+                },
+                body: JSON.stringify(body)
+              });
+
+              if (!res.ok) {
+                const text = await res.text();
+                core.setFailed(`Webhook failed: ${res.status} ${res.statusText} - ${text}`);
+              } else {
+                console.log('Webhook delivered successfully');
+              }
+            } catch (error) {
+              core.setFailed(`Webhook delivery error: ${error.message}`);
+            }
+        env:
+          CALLBACK_URL: ${{ secrets.WEBHOOK_URL }}
+          YOUTRACK_TOKEN: ${{ secrets.YOUTRACK_TOKEN }}
+
+  # Additional job to test parallel workflow failures
+  integration-tests:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.failureMode != 'timeout' }}  # Skip for timeout test
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Run integration tests
+        run: |
+          if [ "${{ github.event.inputs.failureMode }}" = "build-failure" ]; then
+            echo "Integration tests also failing due to build issues..."
+            exit 1
+          else
+            echo "Integration tests passed!"
+          fi
+
+      - name: Notify YouTrack app (Integration)
+        if: ${{ always() }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = {
+              repository: process.env.GITHUB_REPOSITORY,
+              run_id: process.env.GITHUB_RUN_ID,
+              status: '${{ job.status }}',
+              event: process.env.GITHUB_EVENT_NAME,
+              triggerSource: '${{ github.event.inputs.triggerSource }}',
+              testCaseId: '${{ github.event.inputs.testCaseId }}',
+              testRunId: '${{ github.event.inputs.testRunId }}',
+              timestamp: new Date().toISOString(),
+              jobName: 'integration-tests'
+            };
+
+            const res = await fetch(process.env.CALLBACK_URL, {
+              method: 'POST',
+              headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${process.env.YOUTRACK_TOKEN}`
+              },
+              body: JSON.stringify(body)
+            });
+
+            if (!res.ok) {
+              const text = await res.text();
+              core.setFailed(`Integration webhook failed: ${res.status} ${res.statusText} - ${text}`);
+            }
+        env:
+          CALLBACK_URL: ${{ secrets.WEBHOOK_URL }}
+          YOUTRACK_TOKEN: ${{ secrets.YOUTRACK_TOKEN }}
