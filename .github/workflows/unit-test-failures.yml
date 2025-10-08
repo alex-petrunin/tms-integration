@@ -181,8 +181,12 @@ jobs:
           echo "success_rate=$SUCCESS_RATE" >> $GITHUB_OUTPUT
           
           # Convert array to JSON format for failed test names
-          FAILED_NAMES_JSON=$(printf '%s\n' "${FAILED_TEST_NAMES[@]}" | jq -R . | jq -s .)
-          echo "failed_test_names=$FAILED_NAMES_JSON" >> $GITHUB_OUTPUT
+          if [ ${#FAILED_TEST_NAMES[@]} -gt 0 ]; then
+            FAILED_NAMES_JSON=$(printf '%s\n' "${FAILED_TEST_NAMES[@]}" | jq -R . | jq -s .)
+            echo "failed_test_names=$FAILED_NAMES_JSON" >> $GITHUB_OUTPUT
+          else
+            echo "failed_test_names=[]" >> $GITHUB_OUTPUT
+          fi
           echo "error_details=$ERROR_DETAILS" >> $GITHUB_OUTPUT
           echo "test_logs=$TEST_LOGS" >> $GITHUB_OUTPUT
           
@@ -196,10 +200,19 @@ jobs:
           script: |
             console.log('🔔 Notifying YouTrack TMS about unit test results...');
             
+            // Determine the correct status based on test results
+            const testStepOutcome = '${{ steps.unit_tests.outcome }}';
+            const failedTests = '${{ steps.unit_tests.outputs.failed_tests }}';
+            let testStatus = 'success';
+            
+            if (testStepOutcome === 'failure' || (failedTests && parseInt(failedTests) > 0)) {
+              testStatus = 'failure';
+            }
+            
             const body = {
               repository: process.env.GITHUB_REPOSITORY,
               run_id: process.env.GITHUB_RUN_ID,
-              status: '${{ job.status }}',
+              status: testStatus,
               event: process.env.GITHUB_EVENT_NAME,
               triggerSource: '${{ github.event.inputs.triggerSource }}',
               testCaseId: '${{ github.event.inputs.testCaseId }}',
@@ -223,11 +236,12 @@ jobs:
               
               // Add failed test names
               const failedTestNames = '${{ steps.unit_tests.outputs.failed_test_names }}';
-              if (failedTestNames && failedTestNames !== '[]') {
+              if (failedTestNames && failedTestNames !== '[]' && failedTestNames.trim() !== '') {
                 try {
                   body.testResults.failedTests = JSON.parse(failedTestNames);
                 } catch (e) {
                   console.warn('Failed to parse failed test names:', e);
+                  console.warn('Raw failed test names value:', failedTestNames);
                 }
               }
               
