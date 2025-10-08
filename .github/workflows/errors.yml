@@ -107,13 +107,32 @@ jobs:
             console.log('📦 Universal test result payload:');
             console.log(JSON.stringify(testResultPayload, null, 2));
             
+            // Validate required environment variables
+            const webhookUrl = process.env.YOUTRACK_TMS_WEBHOOK_URL;
+            const token = process.env.YOUTRACK_TOKEN;
+            
+            if (!webhookUrl) {
+              console.error('❌ YOUTRACK_TMS_WEBHOOK_URL environment variable is not set');
+              console.error('💡 Please add YOUTRACK_TMS_WEBHOOK_URL to your repository secrets');
+              console.error('💡 Example: https://your-youtrack-instance.com/api/project/integrations/github/webhook');
+              return;
+            }
+            
+            if (!token) {
+              console.error('❌ YOUTRACK_TOKEN environment variable is not set');
+              console.error('💡 Please add YOUTRACK_TOKEN to your repository secrets');
+              return;
+            }
+            
+            console.log(`📡 Sending to webhook: ${webhookUrl}`);
+            
             // Send to YouTrack TMS webhook
             try {
-              const response = await fetch(process.env.YOUTRACK_TMS_WEBHOOK_URL, {
+              const response = await fetch(webhookUrl, {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${process.env.YOUTRACK_TOKEN}`,
+                  'Authorization': `Bearer ${token}`,
                   'X-CI-Platform': 'github-actions',
                   'X-Test-Framework': 'auto-detected' // Could be enhanced to detect framework
                 },
@@ -132,6 +151,7 @@ jobs:
               }
             } catch (error) {
               console.error('💥 Error reporting test results:', error.message);
+              console.error('💡 Check if the webhook URL is correct and accessible');
               // Don't fail the workflow if reporting fails
             }
         env:
