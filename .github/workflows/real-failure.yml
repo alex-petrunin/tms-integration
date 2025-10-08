@@ -1,0 +1,115 @@
+name: Minimal Real Test Failure
+
+on:
+  workflow_dispatch:
+    inputs:
+      testCaseId:
+        description: "Test Case ID"
+        required: true
+      testRunId:
+        description: "Test Run ID"
+        required: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Tests
+        id: tests
+        run: |
+          echo "🧪 Running tests..."
+          
+          # Try to run npm test (will fail if no package.json or test script)
+          echo "Running: npm test"
+          npm test
+          
+          # This line won't be reached if npm test fails
+          echo "Tests completed successfully"
+
+      - name: Notify TMS on Success
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            console.log('✅ Tests passed - notifying TMS...');
+            
+            const body = {
+              repository: process.env.GITHUB_REPOSITORY,
+              run_id: process.env.GITHUB_RUN_ID,
+              status: 'success',
+              event: process.env.GITHUB_EVENT_NAME,
+              testCaseId: '${{ github.event.inputs.testCaseId }}',
+              testRunId: '${{ github.event.inputs.testRunId }}',
+              timestamp: new Date().toISOString(),
+              testResults: {
+                total: 1,
+                passed: 1,
+                failed: 0,
+                successRate: 100,
+                failedTests: [],
+                logs: 'All tests passed successfully'
+              }
+            };
+
+            await fetch(process.env.CALLBACK_URL, {
+              method: 'POST',
+              headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${process.env.YOUTRACK_TOKEN}`
+              },
+              body: JSON.stringify(body)
+            });
+        env:
+          CALLBACK_URL: ${{ secrets.WEBHOOK_URL }}
+          YOUTRACK_TOKEN: ${{ secrets.YOUTRACK_TOKEN }}
+
+      - name: Notify TMS on Failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            console.log('❌ Tests failed - notifying TMS...');
+            
+            const body = {
+              repository: process.env.GITHUB_REPOSITORY,
+              run_id: process.env.GITHUB_RUN_ID,
+              status: 'failure',
+              event: process.env.GITHUB_EVENT_NAME,
+              testCaseId: '${{ github.event.inputs.testCaseId }}',
+              testRunId: '${{ github.event.inputs.testRunId }}',
+              timestamp: new Date().toISOString(),
+              testResults: {
+                total: 1,
+                passed: 0,
+                failed: 1,
+                successRate: 0,
+                failedTests: ['npm test execution'],
+                errorDetails: 'npm test command failed - likely missing test script in package.json',
+                logs: 'Check the test step output for detailed npm error messages'
+              },
+              githubContext: {
+                workflow: '${{ github.workflow }}',
+                runNumber: ${{ github.run_number }},
+                actor: '${{ github.actor }}',
+                stepOutcome: 'failure',
+                runner: {
+                  os: '${{ runner.os }}',
+                  arch: '${{ runner.arch }}'
+                }
+              }
+            };
+
+            await fetch(process.env.CALLBACK_URL, {
+              method: 'POST',
+              headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${process.env.YOUTRACK_TOKEN}`
+              },
+              body: JSON.stringify(body)
+            });
+        env:
+          CALLBACK_URL: ${{ secrets.WEBHOOK_URL }}
+          YOUTRACK_TOKEN: ${{ secrets.YOUTRACK_TOKEN }}
