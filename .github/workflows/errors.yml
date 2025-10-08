@@ -108,12 +108,12 @@ jobs:
             console.log(JSON.stringify(testResultPayload, null, 2));
             
             // Validate required environment variables
-            const webhookUrl = process.env.YOUTRACK_TMS_WEBHOOK_URL;
+            const webhookUrl = process.env.CALLBACK_URL;
             const token = process.env.YOUTRACK_TOKEN;
             
             if (!webhookUrl) {
-              console.error('❌ YOUTRACK_TMS_WEBHOOK_URL environment variable is not set');
-              console.error('💡 Please add YOUTRACK_TMS_WEBHOOK_URL to your repository secrets');
+              console.error('❌ CALLBACK_URL environment variable is not set');
+              console.error('💡 Please add WEBHOOK_URL to your repository secrets');
               console.error('💡 Example: https://your-youtrack-instance.com/api/project/integrations/github/webhook');
               return;
             }
@@ -155,5 +155,5 @@ jobs:
               // Don't fail the workflow if reporting fails
             }
         env:
-          YOUTRACK_TMS_WEBHOOK_URL: ${{ secrets.YOUTRACK_TMS_WEBHOOK_URL }}
+          CALLBACK_URL: ${{ secrets.WEBHOOK_URL }}
           YOUTRACK_TOKEN: ${{ secrets.YOUTRACK_TOKEN }}
