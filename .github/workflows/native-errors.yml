@@ -35,8 +35,8 @@ jobs:
           script: |
             console.log('📋 Sending native GitHub Actions context to TMS...');
             
-            // Get the raw GitHub context and step information
-            const context = {
+            // Build the webhook payload with native GitHub data
+            const webhookPayload = {
               repository: process.env.GITHUB_REPOSITORY,
               run_id: process.env.GITHUB_RUN_ID,
               status: '${{ job.status }}',
@@ -74,7 +74,7 @@ jobs:
               }
             };
 
-            console.log('📦 Native GitHub context:', JSON.stringify(context, null, 2));
+            console.log('📦 Native GitHub context:', JSON.stringify(webhookPayload, null, 2));
 
             const res = await fetch(process.env.CALLBACK_URL, {
               method: 'POST',
@@ -82,7 +82,7 @@ jobs:
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${process.env.YOUTRACK_TOKEN}`
               },
-              body: JSON.stringify(context)
+              body: JSON.stringify(webhookPayload)
             });
             
             if (res.ok) {
