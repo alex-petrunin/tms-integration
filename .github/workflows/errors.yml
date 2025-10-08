@@ -1,4 +1,4 @@
-name: Simple Real Test
+name: Smart Error Capture
 
 on:
   workflow_dispatch:
@@ -21,29 +21,76 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Run npm test (will fail without package.json)
+      - name: Run npm test
         id: tests
         run: |
           echo "🧪 Running npm test..."
-          npm test
-          echo "✅ Tests completed successfully"
+          
+          # Run npm test and capture the exit code and basic error info
+          if npm test 2>&1; then
+            echo "✅ Tests passed"
+            echo "exit_code=0" >> $GITHUB_OUTPUT
+            echo "error_summary=" >> $GITHUB_OUTPUT
+          else
+            EXIT_CODE=$?
+            echo "❌ Tests failed with exit code $EXIT_CODE"
+            echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
+            
+            # Capture just the essential error info (not full output)
+            case $EXIT_CODE in
+              254)
+                echo "error_summary=npm command failed (exit code 254) - likely missing package.json or test script" >> $GITHUB_OUTPUT
+                ;;
+              1)
+                echo "error_summary=Tests failed (exit code 1) - test assertions failed" >> $GITHUB_OUTPUT
+                ;;
+              127)
+                echo "error_summary=Command not found (exit code 127) - npm or test command not available" >> $GITHUB_OUTPUT
+                ;;
+              *)
+                echo "error_summary=Command failed with exit code $EXIT_CODE" >> $GITHUB_OUTPUT
+                ;;
+            esac
+            
+            exit $EXIT_CODE
+          fi
 
-      - name: Notify TMS on Success
-        if: success()
+      - name: Notify TMS with Smart Error Info
+        if: always()
         uses: actions/github-script@v7
         with:
           script: |
-            console.log('✅ Tests passed - notifying TMS...');
+            console.log('📋 Sending smart error info to TMS...');
+            
+            const exitCode = '${{ steps.tests.outputs.exit_code }}';
+            const errorSummary = '${{ steps.tests.outputs.error_summary }}';
+            const stepOutcome = '${{ steps.tests.outcome }}';
+            const stepConclusion = '${{ steps.tests.conclusion }}';
+            
+            const isSuccess = stepOutcome === 'success';
             
             const webhookPayload = {
               repository: process.env.GITHUB_REPOSITORY,
               run_id: process.env.GITHUB_RUN_ID,
-              status: 'success',
+              status: isSuccess ? 'success' : 'failure',
               event: process.env.GITHUB_EVENT_NAME,
               triggerSource: '${{ github.event.inputs.triggerSource }}',
               testCaseId: '${{ github.event.inputs.testCaseId }}',
               testRunId: '${{ github.event.inputs.testRunId }}',
               timestamp: new Date().toISOString(),
+              
+              // Smart error information
+              testResults: {
+                total: 1,
+                passed: isSuccess ? 1 : 0,
+                failed: isSuccess ? 0 : 1,
+                successRate: isSuccess ? 100 : 0,
+                failedTests: isSuccess ? [] : ['npm test execution'],
+                errorDetails: errorSummary || (isSuccess ? '' : `Test step failed: ${stepOutcome}`),
+                logs: `Exit code: ${exitCode}${errorSummary ? '\nSummary: ' + errorSummary : ''}`
+              },
+              
+              // Native GitHub context
               nativeGitHubData: {
                 workflow: {
                   name: '${{ github.workflow }}',
@@ -54,13 +101,18 @@ jobs:
                   status: '${{ job.status }}'
                 },
                 testStep: {
-                  outcome: '${{ steps.tests.outcome }}',
-                  conclusion: '${{ steps.tests.conclusion }}'
+                  outcome: stepOutcome,
+                  conclusion: stepConclusion,
+                  exitCode: parseInt(exitCode) || 0
+                },
+                runner: {
+                  os: '${{ runner.os }}',
+                  arch: '${{ runner.arch }}'
                 }
               }
             };
 
-            console.log('📦 Success payload:', JSON.stringify(webhookPayload, null, 2));
+            console.log('📦 Smart error payload:', JSON.stringify(webhookPayload, null, 2));
 
             const res = await fetch(process.env.CALLBACK_URL, {
               method: 'POST',
@@ -72,61 +124,12 @@ jobs:
             });
             
             if (res.ok) {
-              console.log('✅ TMS notified successfully');
+              console.log('✅ TMS notified with smart error info');
+              const responseText = await res.text();
+              console.log('📄 Response:', responseText);
             } else {
-              console.error('❌ TMS notification failed:', res.status);
-            }
-        env:
-          CALLBACK_URL: ${{ secrets.WEBHOOK_URL }}
-          YOUTRACK_TOKEN: ${{ secrets.YOUTRACK_TOKEN }}
-
-      - name: Notify TMS on Failure
-        if: failure()
-        uses: actions/github-script@v7
-        with:
-          script: |
-            console.log('❌ Tests failed - notifying TMS...');
-            
-            const webhookPayload = {
-              repository: process.env.GITHUB_REPOSITORY,
-              run_id: process.env.GITHUB_RUN_ID,
-              status: 'failure',
-              event: process.env.GITHUB_EVENT_NAME,
-              triggerSource: '${{ github.event.inputs.triggerSource }}',
-              testCaseId: '${{ github.event.inputs.testCaseId }}',
-              testRunId: '${{ github.event.inputs.testRunId }}',
-              timestamp: new Date().toISOString(),
-              nativeGitHubData: {
-                workflow: {
-                  name: '${{ github.workflow }}',
-                  runNumber: ${{ github.run_number }},
-                  actor: '${{ github.actor }}'
-                },
-                job: {
-                  status: '${{ job.status }}'
-                },
-                testStep: {
-                  outcome: '${{ steps.tests.outcome }}',
-                  conclusion: '${{ steps.tests.conclusion }}'
-                }
-              }
-            };
-
-            console.log('📦 Failure payload:', JSON.stringify(webhookPayload, null, 2));
-
-            const res = await fetch(process.env.CALLBACK_URL, {
-              method: 'POST',
-              headers: { 
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${process.env.YOUTRACK_TOKEN}`
-              },
-              body: JSON.stringify(webhookPayload)
-            });
-            
-            if (res.ok) {
-              console.log('✅ TMS notified successfully');
-            } else {
-              console.error('❌ TMS notification failed:', res.status);
+              const errorText = await res.text();
+              console.error(`❌ TMS notification failed: ${res.status} ${res.statusText} - ${errorText}`);
             }
         env:
           CALLBACK_URL: ${{ secrets.WEBHOOK_URL }}
