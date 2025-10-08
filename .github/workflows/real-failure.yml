@@ -3,6 +3,10 @@ name: Minimal Real Test Failure
 on:
   workflow_dispatch:
     inputs:
+      triggerSource:
+        description: "Source of trigger"
+        required: false
+        default: "automated_test_run"
       testCaseId:
         description: "Test Case ID"
         required: true
@@ -41,6 +45,7 @@ jobs:
               run_id: process.env.GITHUB_RUN_ID,
               status: 'success',
               event: process.env.GITHUB_EVENT_NAME,
+              triggerSource: '${{ github.event.inputs.triggerSource }}',
               testCaseId: '${{ github.event.inputs.testCaseId }}',
               testRunId: '${{ github.event.inputs.testRunId }}',
               timestamp: new Date().toISOString(),
@@ -78,6 +83,7 @@ jobs:
               run_id: process.env.GITHUB_RUN_ID,
               status: 'failure',
               event: process.env.GITHUB_EVENT_NAME,
+              triggerSource: '${{ github.event.inputs.triggerSource }}',
               testCaseId: '${{ github.event.inputs.testCaseId }}',
               testRunId: '${{ github.event.inputs.testRunId }}',
               timestamp: new Date().toISOString(),
