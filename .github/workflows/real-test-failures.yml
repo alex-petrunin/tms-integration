@@ -1,0 +1,296 @@
+name: Real Test Failure Demo
+
+on:
+  workflow_dispatch:
+    inputs:
+      triggerSource:
+        description: "Source of trigger"
+        required: false
+        default: "automated_test_run"
+      testCaseId:
+        description: "Original Test Case ID"
+        required: true
+      testRunId:
+        description: "Test Run ID"
+        required: true
+
+jobs:
+  real-test-failure:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: |
+          echo "📦 Installing dependencies..."
+          npm install --silent || echo "No package.json found, continuing..."
+
+      - name: Run Real Tests That Will Fail
+        id: tests
+        continue-on-error: true
+        run: |
+          echo "🧪 Running real test scenarios that will fail..."
+          
+          # Initialize counters
+          TOTAL_TESTS=0
+          PASSED_TESTS=0
+          FAILED_TESTS=0
+          FAILED_TEST_NAMES=()
+          ERROR_DETAILS=""
+          TEST_LOGS=""
+          
+          # Test 1: Try to run non-existent test command
+          echo "Running Test 1: npm test (will fail if no test script)"
+          TOTAL_TESTS=$((TOTAL_TESTS + 1))
+          if npm test 2>&1; then
+            echo "✅ Test 1: npm test - PASSED"
+            PASSED_TESTS=$((PASSED_TESTS + 1))
+          else
+            echo "❌ Test 1: npm test - FAILED"
+            FAILED_TESTS=$((FAILED_TESTS + 1))
+            FAILED_TEST_NAMES+=("npm test execution")
+            ERROR_OUTPUT=$(npm test 2>&1 || true)
+            ERROR_DETAILS+="Test 1 FAILED: npm test execution\n"
+            ERROR_DETAILS+="  Command: npm test\n"
+            ERROR_DETAILS+="  Error: $ERROR_OUTPUT\n\n"
+            TEST_LOGS+="[ERROR] npm test failed\n[OUTPUT] $ERROR_OUTPUT\n"
+          fi
+          
+          # Test 2: Try to access non-existent file
+          echo "Running Test 2: File access test"
+          TOTAL_TESTS=$((TOTAL_TESTS + 1))
+          if [ -f "non-existent-file.txt" ]; then
+            echo "✅ Test 2: File access - PASSED"
+            PASSED_TESTS=$((PASSED_TESTS + 1))
+          else
+            echo "❌ Test 2: File access - FAILED"
+            FAILED_TESTS=$((FAILED_TESTS + 1))
+            FAILED_TEST_NAMES+=("File access test")
+            ERROR_DETAILS+="Test 2 FAILED: File access test\n"
+            ERROR_DETAILS+="  Expected: File 'non-existent-file.txt' should exist\n"
+            ERROR_DETAILS+="  Actual: File not found\n"
+            ERROR_DETAILS+="  Error: No such file or directory\n\n"
+            TEST_LOGS+="[ERROR] File 'non-existent-file.txt' not found\n[DEBUG] Current directory: $(pwd)\n"
+          fi
+          
+          # Test 3: Try to run invalid command
+          echo "Running Test 3: Invalid command execution"
+          TOTAL_TESTS=$((TOTAL_TESTS + 1))
+          if invalid-command-that-does-not-exist 2>/dev/null; then
+            echo "✅ Test 3: Invalid command - PASSED"
+            PASSED_TESTS=$((PASSED_TESTS + 1))
+          else
+            echo "❌ Test 3: Invalid command - FAILED"
+            FAILED_TESTS=$((FAILED_TESTS + 1))
+            FAILED_TEST_NAMES+=("Invalid command execution")
+            COMMAND_ERROR=$(invalid-command-that-does-not-exist 2>&1 || true)
+            ERROR_DETAILS+="Test 3 FAILED: Invalid command execution\n"
+            ERROR_DETAILS+="  Command: invalid-command-that-does-not-exist\n"
+            ERROR_DETAILS+="  Error: $COMMAND_ERROR\n\n"
+            TEST_LOGS+="[ERROR] Command not found: invalid-command-that-does-not-exist\n[DEBUG] PATH: $PATH\n"
+          fi
+          
+          # Test 4: Try to connect to non-existent service
+          echo "Running Test 4: Service connection test"
+          TOTAL_TESTS=$((TOTAL_TESTS + 1))
+          if curl -f --connect-timeout 5 http://non-existent-service.local:8080/health 2>/dev/null; then
+            echo "✅ Test 4: Service connection - PASSED"
+            PASSED_TESTS=$((PASSED_TESTS + 1))
+          else
+            echo "❌ Test 4: Service connection - FAILED"
+            FAILED_TESTS=$((FAILED_TESTS + 1))
+            FAILED_TEST_NAMES+=("Service connection test")
+            CURL_ERROR=$(curl -f --connect-timeout 5 http://non-existent-service.local:8080/health 2>&1 || true)
+            ERROR_DETAILS+="Test 4 FAILED: Service connection test\n"
+            ERROR_DETAILS+="  URL: http://non-existent-service.local:8080/health\n"
+            ERROR_DETAILS+="  Error: $CURL_ERROR\n\n"
+            TEST_LOGS+="[ERROR] Failed to connect to service\n[DEBUG] Curl error: $CURL_ERROR\n"
+          fi
+          
+          # Test 5: Try to parse invalid JSON
+          echo "Running Test 5: JSON parsing test"
+          TOTAL_TESTS=$((TOTAL_TESTS + 1))
+          INVALID_JSON='{"invalid": json, "missing": quotes}'
+          if echo "$INVALID_JSON" | jq . >/dev/null 2>&1; then
+            echo "✅ Test 5: JSON parsing - PASSED"
+            PASSED_TESTS=$((PASSED_TESTS + 1))
+          else
+            echo "❌ Test 5: JSON parsing - FAILED"
+            FAILED_TESTS=$((FAILED_TESTS + 1))
+            FAILED_TEST_NAMES+=("JSON parsing test")
+            JQ_ERROR=$(echo "$INVALID_JSON" | jq . 2>&1 || true)
+            ERROR_DETAILS+="Test 5 FAILED: JSON parsing test\n"
+            ERROR_DETAILS+="  Input: $INVALID_JSON\n"
+            ERROR_DETAILS+="  Error: $JQ_ERROR\n\n"
+            TEST_LOGS+="[ERROR] JSON parsing failed\n[DEBUG] jq error: $JQ_ERROR\n[DEBUG] Input JSON: $INVALID_JSON\n"
+          fi
+          
+          # Calculate success rate
+          SUCCESS_RATE=$(( (PASSED_TESTS * 100) / TOTAL_TESTS ))
+          
+          echo ""
+          echo "📊 Real Test Results:"
+          echo "   Total: $TOTAL_TESTS"
+          echo "   Passed: $PASSED_TESTS"
+          echo "   Failed: $FAILED_TESTS"
+          echo "   Success Rate: ${SUCCESS_RATE}%"
+          
+          # Set outputs for webhook
+          echo "total_tests=$TOTAL_TESTS" >> $GITHUB_OUTPUT
+          echo "passed_tests=$PASSED_TESTS" >> $GITHUB_OUTPUT
+          echo "failed_tests=$FAILED_TESTS" >> $GITHUB_OUTPUT
+          echo "success_rate=$SUCCESS_RATE" >> $GITHUB_OUTPUT
+          
+          # Convert failed test names to JSON
+          if [ ${#FAILED_TEST_NAMES[@]} -gt 0 ]; then
+            FAILED_NAMES_JSON=$(printf '%s\n' "${FAILED_TEST_NAMES[@]}" | jq -R . | jq -s .)
+            echo "failed_test_names=$FAILED_NAMES_JSON" >> $GITHUB_OUTPUT
+          else
+            echo "failed_test_names=[]" >> $GITHUB_OUTPUT
+          fi
+          
+          # Store error details and logs
+          echo "error_details<<EOF" >> $GITHUB_OUTPUT
+          echo -e "$ERROR_DETAILS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "test_logs<<EOF" >> $GITHUB_OUTPUT
+          echo -e "$TEST_LOGS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Capture GitHub Actions Context
+        id: github_context
+        if: always()
+        run: |
+          echo "📋 Capturing GitHub Actions execution context..."
+          
+          # Capture workflow execution details
+          echo "workflow_name=${{ github.workflow }}" >> $GITHUB_OUTPUT
+          echo "run_number=${{ github.run_number }}" >> $GITHUB_OUTPUT
+          echo "run_attempt=${{ github.run_attempt }}" >> $GITHUB_OUTPUT
+          echo "actor=${{ github.actor }}" >> $GITHUB_OUTPUT
+          echo "event_name=${{ github.event_name }}" >> $GITHUB_OUTPUT
+          echo "ref=${{ github.ref }}" >> $GITHUB_OUTPUT
+          echo "sha=${{ github.sha }}" >> $GITHUB_OUTPUT
+          
+          # Capture runner information
+          echo "runner_os=${{ runner.os }}" >> $GITHUB_OUTPUT
+          echo "runner_arch=${{ runner.arch }}" >> $GITHUB_OUTPUT
+          
+          # Capture step outcomes
+          echo "test_step_outcome=${{ steps.tests.outcome }}" >> $GITHUB_OUTPUT
+          echo "test_step_conclusion=${{ steps.tests.conclusion }}" >> $GITHUB_OUTPUT
+
+      - name: Notify YouTrack TMS with Real Error Data
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            console.log('🔔 Notifying YouTrack TMS with real GitHub Actions error data...');
+            
+            // Determine actual workflow status
+            const testOutcome = '${{ steps.tests.outcome }}';
+            const testConclusion = '${{ steps.tests.conclusion }}';
+            const failedTests = parseInt('${{ steps.tests.outputs.failed_tests }}') || 0;
+            
+            let workflowStatus = 'success';
+            if (testOutcome === 'failure' || testConclusion === 'failure' || failedTests > 0) {
+              workflowStatus = 'failure';
+            }
+            
+            const body = {
+              repository: process.env.GITHUB_REPOSITORY,
+              run_id: process.env.GITHUB_RUN_ID,
+              status: workflowStatus,
+              event: process.env.GITHUB_EVENT_NAME,
+              triggerSource: '${{ github.event.inputs.triggerSource }}',
+              testCaseId: '${{ github.event.inputs.testCaseId }}',
+              testRunId: '${{ github.event.inputs.testRunId }}',
+              timestamp: new Date().toISOString(),
+              
+              // Real GitHub Actions context
+              githubContext: {
+                workflow: '${{ steps.github_context.outputs.workflow_name }}',
+                runNumber: parseInt('${{ steps.github_context.outputs.run_number }}'),
+                runAttempt: parseInt('${{ steps.github_context.outputs.run_attempt }}'),
+                actor: '${{ steps.github_context.outputs.actor }}',
+                ref: '${{ steps.github_context.outputs.ref }}',
+                sha: '${{ steps.github_context.outputs.sha }}',
+                runner: {
+                  os: '${{ steps.github_context.outputs.runner_os }}',
+                  arch: '${{ steps.github_context.outputs.runner_arch }}'
+                },
+                stepOutcome: '${{ steps.github_context.outputs.test_step_outcome }}',
+                stepConclusion: '${{ steps.github_context.outputs.test_step_conclusion }}'
+              }
+            };
+
+            // Add test results if available
+            const totalTests = '${{ steps.tests.outputs.total_tests }}';
+            if (totalTests) {
+              body.testResults = {
+                total: parseInt(totalTests),
+                passed: parseInt('${{ steps.tests.outputs.passed_tests }}'),
+                failed: parseInt('${{ steps.tests.outputs.failed_tests }}'),
+                successRate: parseInt('${{ steps.tests.outputs.success_rate }}')
+              };
+              
+              // Add failed test names
+              const failedTestNames = '${{ steps.tests.outputs.failed_test_names }}';
+              if (failedTestNames && failedTestNames !== '[]' && failedTestNames.trim() !== '') {
+                try {
+                  body.testResults.failedTests = JSON.parse(failedTestNames);
+                } catch (e) {
+                  console.warn('Failed to parse failed test names:', e);
+                  body.testResults.failedTests = [];
+                }
+              } else {
+                body.testResults.failedTests = [];
+              }
+              
+              // Add real error details and logs
+              const errorDetails = `${{ steps.tests.outputs.error_details }}`;
+              if (errorDetails && errorDetails.trim()) {
+                body.testResults.errorDetails = errorDetails;
+              }
+              
+              const testLogs = `${{ steps.tests.outputs.test_logs }}`;
+              if (testLogs && testLogs.trim()) {
+                body.testResults.logs = testLogs;
+              }
+            }
+
+            console.log('📦 Webhook payload with real GitHub Actions data:', JSON.stringify(body, null, 2));
+
+            try {
+              const res = await fetch(process.env.CALLBACK_URL, {
+                method: 'POST',
+                headers: { 
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${process.env.YOUTRACK_TOKEN}`
+                },
+                body: JSON.stringify(body)
+              });
+
+              if (!res.ok) {
+                const text = await res.text();
+                console.error(`❌ Webhook failed: ${res.status} ${res.statusText} - ${text}`);
+                core.setFailed(`Webhook failed: ${res.status} ${res.statusText} - ${text}`);
+              } else {
+                console.log('✅ Webhook delivered successfully with real error data');
+                const responseText = await res.text();
+                console.log('📄 Response:', responseText);
+              }
+            } catch (error) {
+              console.error(`💥 Webhook error: ${error.message}`);
+              core.setFailed(`Webhook error: ${error.message}`);
+            }
+        env:
+          CALLBACK_URL: ${{ secrets.WEBHOOK_URL }}
+          YOUTRACK_TOKEN: ${{ secrets.YOUTRACK_TOKEN }}
