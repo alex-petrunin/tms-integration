@@ -1,0 +1,98 @@
+name: Native GitHub Errors
+
+on:
+  workflow_dispatch:
+    inputs:
+      triggerSource:
+        description: "Source of trigger"
+        required: false
+        default: "automated_test_run"
+      testCaseId:
+        description: "Test Case ID"
+        required: true
+      testRunId:
+        description: "Test Run ID"
+        required: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Tests
+        id: tests
+        continue-on-error: true
+        run: |
+          echo "🧪 Running npm test..."
+          npm test
+
+      - name: Send Native GitHub Context to TMS
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            console.log('📋 Sending native GitHub Actions context to TMS...');
+            
+            // Get the raw GitHub context and step information
+            const context = {
+              repository: process.env.GITHUB_REPOSITORY,
+              run_id: process.env.GITHUB_RUN_ID,
+              status: '${{ job.status }}',
+              event: process.env.GITHUB_EVENT_NAME,
+              triggerSource: '${{ github.event.inputs.triggerSource }}',
+              testCaseId: '${{ github.event.inputs.testCaseId }}',
+              testRunId: '${{ github.event.inputs.testRunId }}',
+              timestamp: new Date().toISOString(),
+              
+              // Native GitHub Actions step information
+              nativeGitHubData: {
+                workflow: {
+                  name: '${{ github.workflow }}',
+                  runNumber: ${{ github.run_number }},
+                  runAttempt: ${{ github.run_attempt }},
+                  actor: '${{ github.actor }}',
+                  ref: '${{ github.ref }}',
+                  sha: '${{ github.sha }}',
+                  eventName: '${{ github.event_name }}'
+                },
+                job: {
+                  status: '${{ job.status }}',
+                  conclusion: '${{ job.conclusion }}'
+                },
+                testStep: {
+                  outcome: '${{ steps.tests.outcome }}',
+                  conclusion: '${{ steps.tests.conclusion }}'
+                },
+                runner: {
+                  os: '${{ runner.os }}',
+                  arch: '${{ runner.arch }}',
+                  name: '${{ runner.name }}',
+                  environment: '${{ runner.environment }}'
+                }
+              }
+            };
+
+            console.log('📦 Native GitHub context:', JSON.stringify(context, null, 2));
+
+            const res = await fetch(process.env.CALLBACK_URL, {
+              method: 'POST',
+              headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${process.env.YOUTRACK_TOKEN}`
+              },
+              body: JSON.stringify(context)
+            });
+            
+            if (res.ok) {
+              console.log('✅ TMS notified with native GitHub data');
+              const responseText = await res.text();
+              console.log('📄 Response:', responseText);
+            } else {
+              const errorText = await res.text();
+              console.error(`❌ TMS notification failed: ${res.status} ${res.statusText} - ${errorText}`);
+            }
+        env:
+          CALLBACK_URL: ${{ secrets.WEBHOOK_URL }}
+          YOUTRACK_TOKEN: ${{ secrets.YOUTRACK_TOKEN }}
