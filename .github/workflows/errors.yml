@@ -37,67 +37,16 @@ jobs:
             echo "EOF" >> $GITHUB_OUTPUT
           fi
 
-      - name: Report to YouTrack TMS
+      - name: Notify TMS App
         if: always()
-        uses: actions/github-script@v7
-        env:
-          CALLBACK_URL: ${{ secrets.WEBHOOK_URL }}
-          YOUTRACK_TOKEN: ${{ secrets.YOUTRACK_TOKEN }}
-          ERROR_OUTPUT: ${{ steps.tests.outputs.error_output }}
+        uses: ./.github/actions/notify-tms
         with:
-          script: |
-            const testStatus = '${{ steps.tests.outputs.test_status }}';
-            const errorOutput = process.env.ERROR_OUTPUT || '';
-            const isSuccess = testStatus === 'success';
-
-            const maxLen = 8000;
-            const errorDetails = errorOutput.length > maxLen
-            ? errorOutput.slice(0, maxLen) + '…[truncated]'
-              : errorOutput;
-    
-            const payload = {
-              repository: process.env.GITHUB_REPOSITORY,
-              run_id: process.env.GITHUB_RUN_ID,
-              status: isSuccess ? 'success' : 'failure',
-              event: process.env.GITHUB_EVENT_NAME,
-              triggerSource: '${{ github.event.inputs.triggerSource }}',
-              testCaseId: '${{ github.event.inputs.testCaseId }}',
-              testRunId: '${{ github.event.inputs.testRunId }}',
-              timestamp: new Date().toISOString(),
-              testResults: {
-                errorDetails: errorDetails || (isSuccess ? '' : 'Test execution failed')
-              },
-              nativeGitHubData: {
-                workflow: {
-                  name: '${{ github.workflow }}',
-                  runNumber: ${{ github.run_number }},
-                  actor: '${{ github.actor }}'
-                },
-                job: {
-                  status: '${{ job.status }}'
-                },
-                runner: {
-                  os: '${{ runner.os }}',
-                  arch: '${{ runner.arch }}'
-                }
-              }
-            };
-
-            console.log('📦 Sending to YouTrack TMS:', JSON.stringify(payload, null, 2));
-
-            const res = await fetch(process.env.CALLBACK_URL, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${process.env.YOUTRACK_TOKEN}`
-              },
-              body: JSON.stringify(payload)
-            });
-
-            if (res.ok) {
-              console.log('✅ Successfully notified YouTrack TMS');
-            } else {
-              console.error(`❌ Failed to notify TMS: ${res.status} ${res.statusText}`);
-              const text = await res.text();
-              console.error(text);
-            }
+          triggerSource: ${{ github.event.inputs.triggerSource }}
+          testCaseId: ${{ github.event.inputs.testCaseId }}
+          testRunId: ${{ github.event.inputs.testRunId }}
+          totalTests: 5
+          passedTests: 3
+          failedTests: 2
+          failedTestsList: "Critical business logic test, Integration test - payment gateway"
+          callbackUrl: ${{ secrets.WEBHOOK_URL }}
+          youtrackToken: ${{ secrets.YOUTRACK_TOKEN }}
