@@ -62,6 +62,7 @@ runs:
         TRIGGER_SOURCE: ${{ inputs.triggerSource }}
         TEST_CASE_ID: ${{ inputs.testCaseId }}
         TEST_RUN_ID: ${{ inputs.testRunId }}
+        INDIVIDUAL_TEST_RUN_ID: ${{ inputs.individualTestRunId }}
         TOTAL_TESTS: ${{ inputs.totalTests }}
         PASSED_TESTS: ${{ inputs.passedTests }}
         FAILED_TESTS: ${{ inputs.failedTests }}
