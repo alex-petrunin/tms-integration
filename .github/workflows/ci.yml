@@ -26,35 +26,20 @@ jobs:
       - name: Run example
         run: echo "Hello from workflow"
 
-      - name: Notify YouTrack app
-        if: ${{ always() }}
-        uses: actions/github-script@v7
+      - name: Notify TMS App
+        if: always()
+        uses: ./.github/actions/notify-tms
         with:
-          script: |
-            const body = {
-              repository: process.env.GITHUB_REPOSITORY,
-              run_id: process.env.GITHUB_RUN_ID,
-              status: '${{ job.status }}',
-              event: process.env.GITHUB_EVENT_NAME,
-              triggerSource: '${{ github.event.inputs.triggerSource }}',
-              testCaseId: '${{ github.event.inputs.testCaseId }}',
-              testRunId: '${{ github.event.inputs.testRunId }}',
-              timestamp: new Date().toISOString()
-            };
-
-            const res = await fetch(process.env.CALLBACK_URL, {
-              method: 'POST',
-              headers: { 
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${process.env.YOUTRACK_TOKEN}`
-              },
-              body: JSON.stringify(body)
-            });
-
-            if (!res.ok) {
-              const text = await res.text();
-              core.setFailed(`Webhook failed: ${res.status} ${res.statusText} - ${text}`);
-            }
+          triggerSource: ${{ github.event.inputs.triggerSource }}
+          testCaseId: ${{ github.event.inputs.testCaseId }}
+          testRunId: ${{ github.event.inputs.testRunId }}
+          individualTestRunId: ${{ github.event.inputs.individualTestRunId }}
+          totalTests: 5
+          passedTests: 3
+          failedTests: 2
+          failedTestsList: "Critical business logic test, Integration test - payment gateway"
+          callbackUrl: ${{ secrets.WEBHOOK_URL }}
+          youtrackToken: ${{ secrets.YOUTRACK_TOKEN }}
         env:
           CALLBACK_URL: ${{ secrets.WEBHOOK_URL }}
           YOUTRACK_TOKEN: ${{ secrets.YOUTRACK_TOKEN }}
