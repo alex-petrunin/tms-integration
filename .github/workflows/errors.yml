@@ -23,7 +23,6 @@ jobs:
 
       - name: Run npm test (will fail)
         id: tests
-        continue-on-error: true
         run: |
           echo "Running npm test..."
           if npm test > test_output.log 2>&1; then
