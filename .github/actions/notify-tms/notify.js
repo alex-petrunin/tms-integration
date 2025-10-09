@@ -1,5 +1,4 @@
 // notify.js
-const fetch = require('node-fetch');
 
 (async () => {
   try {
