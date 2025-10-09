@@ -63,60 +63,19 @@ jobs:
           # Always exit with failure
           exit 1
 
-      - name: Notify YouTrack TMS App
-        if: ${{ always() }}
-        uses: actions/github-script@v7
+      - name: Notify TMS App
+        if: always()
+        uses: ./.github/actions/notify-tms
         with:
-          script: |
-            console.log('🔔 Notifying YouTrack TMS App about test results...');
-            
-            const body = {
-              repository: process.env.GITHUB_REPOSITORY,
-              run_id: process.env.GITHUB_RUN_ID,
-              status: '${{ job.status }}',
-              event: process.env.GITHUB_EVENT_NAME,
-              triggerSource: '${{ github.event.inputs.triggerSource }}',
-              testCaseId: '${{ github.event.inputs.testCaseId }}',
-              testRunId: '${{ github.event.inputs.testRunId }}',
-              timestamp: new Date().toISOString(),
-              // Additional test result metadata
-              testResults: {
-                total: 5,
-                passed: 3,
-                failed: 2,
-                successRate: 60,
-                failedTests: [
-                  'Critical business logic test',
-                  'Integration test - payment gateway'
-                ]
-              }
-            };
-
-            console.log('📦 Webhook payload:', JSON.stringify(body, null, 2));
-
-            try {
-              const res = await fetch(process.env.CALLBACK_URL, {
-                method: 'POST',
-                headers: { 
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${process.env.YOUTRACK_TOKEN}`
-                },
-                body: JSON.stringify(body)
-              });
-
-              if (!res.ok) {
-                const text = await res.text();
-                console.error(`❌ Webhook failed: ${res.status} ${res.statusText} - ${text}`);
-                core.setFailed(`Webhook failed: ${res.status} ${res.statusText} - ${text}`);
-              } else {
-                console.log('✅ Webhook delivered successfully to YouTrack TMS');
-                const responseText = await res.text();
-                console.log('📄 Response:', responseText);
-              }
-            } catch (error) {
-              console.error(`💥 Webhook delivery error: ${error.message}`);
-              core.setFailed(`Webhook delivery error: ${error.message}`);
-            }
+          triggerSource: ${{ github.event.inputs.triggerSource }}
+          testCaseId: ${{ github.event.inputs.testCaseId }}
+          testRunId: ${{ github.event.inputs.testRunId }}
+          totalTests: 5
+          passedTests: 3
+          failedTests: 2
+          failedTestsList: "Critical business logic test, Integration test - payment gateway"
+          callbackUrl: ${{ secrets.WEBHOOK_URL }}
+          youtrackToken: ${{ secrets.YOUTRACK_TOKEN }}
         env:
           CALLBACK_URL: ${{ secrets.WEBHOOK_URL }}
           YOUTRACK_TOKEN: ${{ secrets.YOUTRACK_TOKEN }}
