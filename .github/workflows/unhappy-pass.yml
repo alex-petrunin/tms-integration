@@ -73,6 +73,7 @@ jobs:
           triggerSource: ${{ github.event.inputs.triggerSource }}
           testCaseId: ${{ github.event.inputs.testCaseId }}
           testRunId: ${{ github.event.inputs.testRunId }}
+          individualTestRunId: ${{ github.event.inputs.individualTestRunId }}
           totalTests: 5
           passedTests: 3
           failedTests: 2
