@@ -11,8 +11,11 @@ on:
         description: "Test Case ID"
         required: true
       testRunId:
-        description: "Test Run ID"
+        description: "Test Run ID (parent suite)"
         required: true
+      individualTestRunId:
+        description: "Individual Test Run ID (specific test case run)"
+        required: false
 
 jobs:
   test:
