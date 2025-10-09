@@ -1,0 +1,66 @@
+name: "Notify YouTrack TMS"
+description: "Send job results to YouTrack TMS webhook"
+author: "YouTrack Frontend Core"
+branding:
+  icon: 'send'
+  color: 'blue'
+
+inputs:
+  triggerSource:
+    description: "Trigger source (YT issue, test repo, etc.)"
+    required: false
+  testCaseId:
+    description: "Original Test Case ID"
+    required: true
+  testRunId:
+    description: "Test Run ID"
+    required: true
+  totalTests:
+    description: "Total number of tests run"
+    required: false
+    default: "0"
+  passedTests:
+    description: "Number of tests passed"
+    required: false
+    default: "0"
+  failedTests:
+    description: "Number of tests failed"
+    required: false
+    default: "0"
+  failedTestsList:
+    description: "List of failed tests (comma-separated)"
+    required: false
+    default: ""
+  callbackUrl:
+    description: "Webhook URL for TMS"
+    required: true
+  youtrackToken:
+    description: "YouTrack auth token"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Notify TMS App
+      shell: bash
+      run: |
+        node $GITHUB_ACTION_PATH/notify.js
+      env:
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        GITHUB_RUN_ID: ${{ github.run_id }}
+        GITHUB_EVENT_NAME: ${{ github.event_name }}
+        GITHUB_WORKFLOW: ${{ github.workflow }}
+        GITHUB_RUN_NUMBER: ${{ github.run_number }}
+        GITHUB_ACTOR: ${{ github.actor }}
+        JOB_STATUS: ${{ job.status }}
+
+        TRIGGER_SOURCE: ${{ inputs.triggerSource }}
+        TEST_CASE_ID: ${{ inputs.testCaseId }}
+        TEST_RUN_ID: ${{ inputs.testRunId }}
+        TOTAL_TESTS: ${{ inputs.totalTests }}
+        PASSED_TESTS: ${{ inputs.passedTests }}
+        FAILED_TESTS: ${{ inputs.failedTests }}
+        FAILED_TESTS_LIST: ${{ inputs.failedTestsList }}
+
+        CALLBACK_URL: ${{ inputs.callbackUrl }}
+        YOUTRACK_TOKEN: ${{ inputs.youtrackToken }}
