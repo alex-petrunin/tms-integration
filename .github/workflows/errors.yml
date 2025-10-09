@@ -1,4 +1,4 @@
-name: Universal Test Integration
+name: Simple Failure Demo
 
 on:
   workflow_dispatch:
@@ -21,138 +21,101 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Your actual test execution - replace with any test framework
-      - name: Execute Tests
-        id: test_execution
+      - name: Run npm test (will fail)
+        id: tests
+        continue-on-error: true
         run: |
-          # This is where you put your actual test command
-          # Examples: npm test, pytest, mvn test, go test, etc.
-          npm test
+          # Capture the real npm test output
+          echo "Running npm test..."
+          
+          # Run npm test and capture both stdout and stderr
+          if npm test > test_output.log 2>&1; then
+            echo "Tests passed"
+            echo "test_status=success" >> $GITHUB_OUTPUT
+            echo "error_output=" >> $GITHUB_OUTPUT
+          else
+            EXIT_CODE=$?
+            echo "Tests failed with exit code $EXIT_CODE"
+            echo "test_status=failure" >> $GITHUB_OUTPUT
+            
+            # Capture the real error output
+            ERROR_OUTPUT=$(cat test_output.log)
+            echo "error_output<<EOF" >> $GITHUB_OUTPUT
+            echo "$ERROR_OUTPUT" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          fi
 
-      # Universal notification step - works with any CI/CD and test framework
-      - name: Report Test Results to YouTrack TMS
+      - name: Report to YouTrack TMS
         if: always()
         uses: actions/github-script@v7
         with:
           script: |
-            console.log('📋 Reporting test results to YouTrack TMS...');
+            // Get the real test results
+            const testStatus = '${{ steps.tests.outputs.test_status }}';
+            const errorOutput = `${{ steps.tests.outputs.error_output }}`;
+            const isSuccess = testStatus === 'success';
             
-            // Collect native CI/CD information (GitHub Actions specific)
-            const cicdContext = {
-              platform: 'github-actions',
+            console.log(`Test status: ${testStatus}`);
+            console.log(`Error output length: ${errorOutput.length} characters`);
+            
+            // Simple payload with the info needed for the tooltip
+            const payload = {
               repository: process.env.GITHUB_REPOSITORY,
-              runId: process.env.GITHUB_RUN_ID,
-              runUrl: `https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,
-              workflow: {
-                name: '${{ github.workflow }}',
-                runNumber: ${{ github.run_number }},
-                runAttempt: ${{ github.run_attempt }},
-                ref: '${{ github.ref }}',
-                sha: '${{ github.sha }}',
-                actor: '${{ github.actor }}',
-                eventName: '${{ github.event_name }}'
-              },
-              job: {
-                name: '${{ github.job }}',
-                status: '${{ job.status }}',
-                conclusion: '${{ job.conclusion }}'
-              },
-              runner: {
-                os: '${{ runner.os }}',
-                arch: '${{ runner.arch }}',
-                name: '${{ runner.name }}'
-              },
-              timestamp: new Date().toISOString()
-            };
-            
-            // Collect test step information
-            const testStepInfo = {
-              stepName: 'Execute Tests',
-              outcome: '${{ steps.test_execution.outcome }}',
-              conclusion: '${{ steps.test_execution.conclusion }}'
-            };
-            
-            // Determine overall test result from native CI/CD data
-            const testPassed = testStepInfo.outcome === 'success';
-            const testStatus = testPassed ? 'passed' : 'failed';
-            
-            // Build universal test result payload
-            const testResultPayload = {
-              // YouTrack TMS specific fields
+              run_id: process.env.GITHUB_RUN_ID,
+              status: isSuccess ? 'success' : 'failure',
+              event: process.env.GITHUB_EVENT_NAME,
               triggerSource: '${{ github.event.inputs.triggerSource }}',
               testCaseId: '${{ github.event.inputs.testCaseId }}',
               testRunId: '${{ github.event.inputs.testRunId }}',
+              timestamp: new Date().toISOString(),
               
-              // Universal test result information
-              testResult: {
-                status: testStatus,
-                passed: testPassed,
-                timestamp: cicdContext.timestamp,
-                executionTime: null, // Could be calculated if needed
-                
-                // Native CI/CD context (platform agnostic structure)
-                cicdContext: cicdContext,
-                
-                // Test execution details from native CI/CD
-                execution: {
-                  stepName: testStepInfo.stepName,
-                  outcome: testStepInfo.outcome,
-                  conclusion: testStepInfo.conclusion,
-                  // Add any test framework specific results here if available
-                  // e.g., junit results, coverage reports, etc.
+              // Test results for the tooltip - using REAL data
+              testResults: {
+                total: 1,
+                passed: isSuccess ? 1 : 0,
+                failed: isSuccess ? 0 : 1,
+                successRate: isSuccess ? 100 : 0,
+                failedTests: isSuccess ? [] : ['npm test'],
+                errorDetails: errorOutput || (isSuccess ? '' : 'Test execution failed'),
+                logs: isSuccess ? 'Tests completed successfully' : `Command: npm test\nStep outcome: ${testStatus}`
+              },
+              
+              // GitHub context for the tooltip
+              nativeGitHubData: {
+                workflow: {
+                  name: '${{ github.workflow }}',
+                  runNumber: ${{ github.run_number }},
+                  actor: '${{ github.actor }}'
+                },
+                job: {
+                  status: '${{ job.status }}'
+                },
+                testStep: {
+                  outcome: '${{ steps.tests.outcome }}',
+                  conclusion: '${{ steps.tests.conclusion }}'
+                },
+                runner: {
+                  os: '${{ runner.os }}',
+                  arch: '${{ runner.arch }}'
                 }
               }
             };
+
+            console.log('📦 Sending to YouTrack TMS:', JSON.stringify(payload, null, 2));
+
+            const res = await fetch(process.env.CALLBACK_URL, {
+              method: 'POST',
+              headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${process.env.YOUTRACK_TOKEN}`
+              },
+              body: JSON.stringify(payload)
+            });
             
-            console.log('📦 Universal test result payload:');
-            console.log(JSON.stringify(testResultPayload, null, 2));
-            
-            // Validate required environment variables
-            const webhookUrl = process.env.CALLBACK_URL;
-            const token = process.env.YOUTRACK_TOKEN;
-            
-            if (!webhookUrl) {
-              console.error('❌ CALLBACK_URL environment variable is not set');
-              console.error('💡 Please add WEBHOOK_URL to your repository secrets');
-              console.error('💡 Example: https://your-youtrack-instance.com/api/project/integrations/github/webhook');
-              return;
-            }
-            
-            if (!token) {
-              console.error('❌ YOUTRACK_TOKEN environment variable is not set');
-              console.error('💡 Please add YOUTRACK_TOKEN to your repository secrets');
-              return;
-            }
-            
-            console.log(`📡 Sending to webhook: ${webhookUrl}`);
-            
-            // Send to YouTrack TMS webhook
-            try {
-              const response = await fetch(webhookUrl, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${token}`,
-                  'X-CI-Platform': 'github-actions',
-                  'X-Test-Framework': 'auto-detected' // Could be enhanced to detect framework
-                },
-                body: JSON.stringify(testResultPayload)
-              });
-              
-              if (response.ok) {
-                const responseData = await response.text();
-                console.log('✅ Successfully reported test results to YouTrack TMS');
-                console.log('📄 Response:', responseData);
-              } else {
-                const errorData = await response.text();
-                console.error(`❌ Failed to report test results: ${response.status} ${response.statusText}`);
-                console.error('📄 Error details:', errorData);
-                // Don't fail the workflow if reporting fails
-              }
-            } catch (error) {
-              console.error('💥 Error reporting test results:', error.message);
-              console.error('💡 Check if the webhook URL is correct and accessible');
-              // Don't fail the workflow if reporting fails
+            if (res.ok) {
+              console.log('✅ Successfully notified YouTrack TMS');
+            } else {
+              console.error('❌ Failed to notify YouTrack TMS:', res.status);
             }
         env:
           CALLBACK_URL: ${{ secrets.WEBHOOK_URL }}
