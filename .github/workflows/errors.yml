@@ -1,14 +1,13 @@
-name: Simple Failure Demo
+name: Unhappy Pass Test for TMS
 
 on:
   workflow_dispatch:
     inputs:
       triggerSource:
-        description: "Source of trigger"
+        description: "Source of trigger (YT issue ID, test repo, etc.)"
         required: false
-        default: "automated_test_run"
       testCaseId:
-        description: "Test Case ID"
+        description: "Original Test Case ID"
         required: true
       testRunId:
         description: "Test Run ID (parent suite)"
@@ -18,28 +17,61 @@ on:
         required: false
 
 jobs:
-  test:
+  auto-fail-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 3
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout repo
+        uses: actions/checkout@v3
 
-      - name: Run npm test (will fail)
-        id: tests
-        continue-on-error: false
+      - name: Show test context
         run: |
-          echo "Running npm test..."
-          if npm test > test_output.log 2>&1; then
-            echo "test_status=success" >> $GITHUB_OUTPUT
-            echo "error_output=" >> $GITHUB_OUTPUT
-          else
-            EXIT_CODE=$?
-            echo "Tests failed with exit code $EXIT_CODE"
-            echo "test_status=failure" >> $GITHUB_OUTPUT
-            echo "error_output<<EOF" >> $GITHUB_OUTPUT
-            cat test_output.log >> $GITHUB_OUTPUT
-            echo "EOF" >> $GITHUB_OUTPUT
-          fi
+          echo "🧪 Auto-Fail Test Starting..."
+          echo "Test Case ID: ${{ github.event.inputs.testCaseId }}"
+          echo "Test Run ID: ${{ github.event.inputs.testRunId }}"
+          echo "Trigger Source: ${{ github.event.inputs.triggerSource }}"
+          echo "Repository: ${{ github.repository }}"
+          echo "Run ID: ${{ github.run_id }}"
+
+      - name: Run failing tests
+        id: tests
+        run: |
+          echo "🚀 Starting test execution..."
+          echo "Setting up test environment..."
+          sleep 1
+          
+          echo "Running test suite..."
+          echo "✅ Test 1: User authentication - PASSED"
+          echo "✅ Test 2: Data validation - PASSED"
+          echo "✅ Test 3: API endpoints - PASSED"
+          sleep 1
+          
+          echo "❌ Test 4: Critical business logic - FAILED"
+          echo "   Expected: user.isActive = true"
+          echo "   Actual: user.isActive = false"
+          echo "   AssertionError: User should be active after registration"
+          
+          echo "❌ Test 5: Integration test - FAILED"
+          echo "   Error: Connection timeout to external service"
+          echo "   Details: Unable to connect to payment gateway after 30 seconds"
+          
+          echo ""
+          echo "📊 Test Results Summary:"
+          echo "   Total: 5 tests"
+          echo "   Passed: 3"
+          echo "   Failed: 2"
+          echo "   Success Rate: 60%"
+          echo ""
+          echo "💥 Test suite failed - 2 critical failures detected"
+          
+          # Set outputs for TMS notification
+          echo "test_status=failure" >> $GITHUB_OUTPUT
+          echo "error_output<<EOF" >> $GITHUB_OUTPUT
+          echo "Critical business logic test, Integration test - payment gateway" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          # Exit with failure so job.status = failure
+          exit 1
 
       - name: Notify TMS App
         if: always()
@@ -52,6 +84,9 @@ jobs:
           totalTests: 5
           passedTests: 3
           failedTests: 2
-          failedTestsList: "Critical business logic test, Integration test - payment gateway"
+          failedTestsList: "${{ steps.tests.outputs.error_output }}"
           callbackUrl: ${{ secrets.WEBHOOK_URL }}
           youtrackToken: ${{ secrets.YOUTRACK_TOKEN }}
+        env:
+          CALLBACK_URL: ${{ secrets.WEBHOOK_URL }}
+          YOUTRACK_TOKEN: ${{ secrets.YOUTRACK_TOKEN }}
