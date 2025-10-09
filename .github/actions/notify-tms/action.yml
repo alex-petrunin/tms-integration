@@ -13,8 +13,12 @@ inputs:
     description: "Original Test Case ID"
     required: true
   testRunId:
-    description: "Test Run ID"
+    description: "Parent Test Run ID"
     required: true
+  individualTestRunId:
+    description: "Individual Test Run ID (specific test case run)"
+    required: false
+    default: ""
   totalTests:
     description: "Total number of tests run"
     required: false
@@ -37,6 +41,7 @@ inputs:
   youtrackToken:
     description: "YouTrack auth token"
     required: true
+
 
 runs:
   using: "composite"
