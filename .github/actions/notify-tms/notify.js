@@ -14,6 +14,7 @@
       triggerSource: process.env.TRIGGER_SOURCE,
       testCaseId: process.env.TEST_CASE_ID,
       testRunId: process.env.TEST_RUN_ID,
+      individualTestRunId: process.env.INDIVIDUAL_TEST_RUN_ID || null,
       timestamp: new Date().toISOString(),
       testResults: {
         total: parseInt(process.env.TOTAL_TESTS),
