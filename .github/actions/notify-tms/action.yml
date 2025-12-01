@@ -1,72 +1,221 @@
-name: "Notify YouTrack TMS"
-description: "Send job results to YouTrack TMS webhook"
-author: "YouTrack Frontend Core"
-branding:
-  icon: 'send'
-  color: 'blue'
-
+name: 'Notify TMS App'
+description: 'Send workflow results to YouTrack TMS App webhook'
 inputs:
   triggerSource:
-    description: "Trigger source (YT issue, test repo, etc.)"
+    description: 'Source of trigger (YT issue ID, test repo, etc.)'
     required: false
   testCaseId:
-    description: "Original Test Case ID"
+    description: 'Original Test Case ID'
     required: true
   testRunId:
-    description: "Parent Test Run ID"
+    description: 'Test Run ID (parent suite)'
     required: true
   individualTestRunId:
-    description: "Individual Test Run ID (specific test case run)"
+    description: 'Individual Test Run ID (specific test case run)'
     required: false
-    default: ""
   totalTests:
-    description: "Total number of tests run"
+    description: 'Total number of tests in suite'
     required: false
-    default: "0"
   passedTests:
-    description: "Number of tests passed"
+    description: 'Number of passed tests'
     required: false
-    default: "0"
   failedTests:
-    description: "Number of tests failed"
+    description: 'Number of failed tests'
     required: false
-    default: "0"
   failedTestsList:
-    description: "List of failed tests (comma-separated)"
+    description: 'Comma-separated list of failed test names'
     required: false
-    default: ""
   callbackUrl:
-    description: "Webhook URL for TMS"
+    description: 'Full webhook URL to TMS App endpoint'
     required: true
   youtrackToken:
-    description: "YouTrack auth token"
-    required: true
-
+    description: 'YouTrack API token for authentication (optional)'
+    required: false
+  errorDetails:
+    description: 'Error details for individual test runs'
+    required: false
+  logs:
+    description: 'Test execution logs'
+    required: false
+  assertionDetails:
+    description: 'Assertion failure details'
+    required: false
 
 runs:
-  using: "composite"
+  using: 'composite'
   steps:
-    - name: Notify TMS App
+    - name: Determine workflow status
+      id: status
       shell: bash
       run: |
-        node $GITHUB_ACTION_PATH/notify.js
-      env:
-        GITHUB_REPOSITORY: ${{ github.repository }}
-        GITHUB_RUN_ID: ${{ github.run_id }}
-        GITHUB_EVENT_NAME: ${{ github.event_name }}
-        GITHUB_WORKFLOW: ${{ github.workflow }}
-        GITHUB_RUN_NUMBER: ${{ github.run_number }}
-        GITHUB_ACTOR: ${{ github.actor }}
-        JOB_STATUS: ${{ job.status }}
+        if [ "${{ job.status }}" == "success" ]; then
+          echo "status=success" >> $GITHUB_OUTPUT
+        elif [ "${{ job.status }}" == "failure" ]; then
+          echo "status=failure" >> $GITHUB_OUTPUT
+        elif [ "${{ job.status }}" == "cancelled" ]; then
+          echo "status=cancelled" >> $GITHUB_OUTPUT
+        else
+          echo "status=unknown" >> $GITHUB_OUTPUT
+        fi
 
-        TRIGGER_SOURCE: ${{ inputs.triggerSource }}
-        TEST_CASE_ID: ${{ inputs.testCaseId }}
-        TEST_RUN_ID: ${{ inputs.testRunId }}
-        INDIVIDUAL_TEST_RUN_ID: ${{ inputs.individualTestRunId }}
-        TOTAL_TESTS: ${{ inputs.totalTests }}
-        PASSED_TESTS: ${{ inputs.passedTests }}
-        FAILED_TESTS: ${{ inputs.failedTests }}
-        FAILED_TESTS_LIST: ${{ inputs.failedTestsList }}
+    - name: Calculate success rate
+      id: success_rate
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.totalTests }}" ] && [ "${{ inputs.totalTests }}" != "0" ]; then
+          if [ -n "${{ inputs.passedTests }}" ]; then
+            RATE=$(echo "scale=2; ${{ inputs.passedTests }} * 100 / ${{ inputs.totalTests }}" | bc)
+            echo "rate=$RATE" >> $GITHUB_OUTPUT
+          else
+            echo "rate=0" >> $GITHUB_OUTPUT
+          fi
+        else
+          echo "rate=" >> $GITHUB_OUTPUT
+        fi
 
-        CALLBACK_URL: ${{ inputs.callbackUrl }}
-        YOUTRACK_TOKEN: ${{ inputs.youtrackToken }}
+    - name: Prepare webhook payload
+      id: payload
+      shell: bash
+      run: |
+        # Parse failed tests list
+        FAILED_LIST="[]"
+        if [ -n "${{ inputs.failedTestsList }}" ]; then
+          # Convert comma-separated string to JSON array
+          FAILED_LIST=$(echo "${{ inputs.failedTestsList }}" | jq -R -s -c 'split(",") | map(gsub("^\\s+|\\s+$"; ""))')
+        fi
+
+        # Build suite results if provided
+        SUITE_RESULTS="null"
+        if [ -n "${{ inputs.totalTests }}" ]; then
+          SUITE_RESULTS=$(jq -n \
+            --arg total "${{ inputs.totalTests }}" \
+            --arg passed "${{ inputs.passedTests }}" \
+            --arg failed "${{ inputs.failedTests }}" \
+            --arg rate "${{ steps.success_rate.outputs.rate }}" \
+            --argjson failedList "$FAILED_LIST" \
+            '{
+              totalTests: ($total | tonumber),
+              passedTests: ($passed | tonumber),
+              failedTests: ($failed | tonumber),
+              successRate: (if $rate != "" then ($rate | tonumber) else null end),
+              failedTestsList: $failedList
+            }')
+        fi
+
+        # Build individual results if provided
+        INDIVIDUAL_RESULTS="null"
+        if [ -n "${{ inputs.errorDetails }}" ] || [ -n "${{ inputs.logs }}" ] || [ -n "${{ inputs.assertionDetails }}" ]; then
+          INDIVIDUAL_RESULTS=$(jq -n \
+            --arg error "${{ inputs.errorDetails }}" \
+            --arg logs "${{ inputs.logs }}" \
+            --arg assertion "${{ inputs.assertionDetails }}" \
+            '{
+              errorDetails: (if $error != "" then $error else null end),
+              logs: (if $logs != "" then $logs else null end),
+              assertionDetails: (if $assertion != "" then $assertion else null end)
+            }')
+        fi
+
+        # Build workflow context
+        WORKFLOW_CONTEXT=$(jq -n \
+          --arg name "${{ github.workflow }}" \
+          --arg runNumber "${{ github.run_number }}" \
+          --arg actor "${{ github.actor }}" \
+          '{
+            name: $name,
+            runNumber: ($runNumber | tonumber),
+            actor: $actor
+          }')
+
+        # Build job context
+        JOB_CONTEXT=$(jq -n \
+          --arg status "${{ steps.status.outputs.status }}" \
+          '{
+            status: $status
+          }')
+
+        # Build runner context
+        RUNNER_CONTEXT=$(jq -n \
+          --arg os "${{ runner.os }}" \
+          --arg arch "${{ runner.arch }}" \
+          '{
+            os: $os,
+            arch: $arch
+          }')
+
+        # Build complete payload
+        PAYLOAD=$(jq -n \
+          --arg repo "${{ github.repository }}" \
+          --arg runId "${{ github.run_id }}" \
+          --arg status "${{ steps.status.outputs.status }}" \
+          --arg event "${{ github.event_name }}" \
+          --arg timestamp "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+          --arg testCaseId "${{ inputs.testCaseId }}" \
+          --arg testRunId "${{ inputs.testRunId }}" \
+          --arg individualTestRunId "${{ inputs.individualTestRunId }}" \
+          --arg triggerSource "${{ inputs.triggerSource }}" \
+          --argjson suiteResults "$SUITE_RESULTS" \
+          --argjson individualResults "$INDIVIDUAL_RESULTS" \
+          --argjson workflow "$WORKFLOW_CONTEXT" \
+          --argjson job "$JOB_CONTEXT" \
+          --argjson runner "$RUNNER_CONTEXT" \
+          '{
+            repository: $repo,
+            run_id: $runId,
+            status: $status,
+            event: $event,
+            timestamp: $timestamp,
+            testCaseId: $testCaseId,
+            testRunId: $testRunId,
+            individualTestRunId: (if $individualTestRunId != "" then $individualTestRunId else null end),
+            triggerSource: (if $triggerSource != "" then $triggerSource else null end),
+            suiteResults: (if $suiteResults != "null" then $suiteResults else null end),
+            individualResults: (if $individualResults != "null" then $individualResults else null end),
+            workflow: $workflow,
+            job: $job,
+            runner: $runner
+          }')
+
+        echo "payload=$PAYLOAD" >> $GITHUB_OUTPUT
+        echo "Payload prepared:"
+        echo "$PAYLOAD" | jq '.'
+
+    - name: Send webhook to TMS App
+      shell: bash
+      run: |
+        set +e
+        
+        HEADERS=(-H "Content-Type: application/json")
+        if [ -n "${{ inputs.youtrackToken }}" ]; then
+          HEADERS+=(-H "Authorization: Bearer ${{ inputs.youtrackToken }}")
+        fi
+
+        RESPONSE=$(curl -s -w "\n%{http_code}" \
+          -X POST \
+          "${HEADERS[@]}" \
+          -d "${{ steps.payload.outputs.payload }}" \
+          "${{ inputs.callbackUrl }}")
+
+        HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+        BODY=$(echo "$RESPONSE" | sed '$d')
+
+        echo "HTTP Status: $HTTP_CODE"
+        echo "Response: $BODY"
+
+        if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+          echo "✅ Successfully notified TMS App"
+          # Parse response to check if ok
+          OK=$(echo "$BODY" | jq -r '.ok // false')
+          if [ "$OK" == "true" ]; then
+            echo "✅ TMS App confirmed successful processing"
+          else
+            MESSAGE=$(echo "$BODY" | jq -r '.message // "Unknown error"')
+            echo "⚠️ TMS App returned ok=false: $MESSAGE"
+            exit 0  # Don't fail the workflow, just warn
+          fi
+        else
+          echo "❌ Failed to notify TMS App (HTTP $HTTP_CODE)"
+          echo "$BODY" | jq '.' || echo "$BODY"
+          exit 1
+        fi
+
