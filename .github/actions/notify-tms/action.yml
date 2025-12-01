@@ -73,10 +73,11 @@ runs:
           echo "rate=" >> $GITHUB_OUTPUT
         fi
 
-    - name: Prepare webhook payload
-      id: payload
+    - name: Prepare and send webhook payload
       shell: bash
       run: |
+        set +e
+        
         # Parse failed tests list
         FAILED_LIST="[]"
         if [ -n "${{ inputs.failedTestsList }}" ]; then
@@ -143,8 +144,9 @@ runs:
             arch: $arch
           }')
 
-        # Build complete payload
-        PAYLOAD=$(jq -n \
+        # Build complete payload and save to file
+        PAYLOAD_FILE=$(mktemp)
+        jq -n \
           --arg repo "${{ github.repository }}" \
           --arg runId "${{ github.run_id }}" \
           --arg status "${{ steps.status.outputs.status }}" \
@@ -174,27 +176,26 @@ runs:
             workflow: $workflow,
             job: $job,
             runner: $runner
-          }')
+          }' > "$PAYLOAD_FILE"
 
-        echo "payload=$PAYLOAD" >> $GITHUB_OUTPUT
         echo "Payload prepared:"
-        echo "$PAYLOAD" | jq '.'
+        cat "$PAYLOAD_FILE" | jq '.'
 
-    - name: Send webhook to TMS App
-      shell: bash
-      run: |
-        set +e
-        
+        # Prepare headers
         HEADERS=(-H "Content-Type: application/json")
         if [ -n "${{ inputs.youtrackToken }}" ]; then
           HEADERS+=(-H "Authorization: Bearer ${{ inputs.youtrackToken }}")
         fi
 
+        # Send webhook
         RESPONSE=$(curl -s -w "\n%{http_code}" \
           -X POST \
           "${HEADERS[@]}" \
-          -d "${{ steps.payload.outputs.payload }}" \
+          -d "@$PAYLOAD_FILE" \
           "${{ inputs.callbackUrl }}")
+
+        # Clean up temp file
+        rm -f "$PAYLOAD_FILE"
 
         HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
         BODY=$(echo "$RESPONSE" | sed '$d')
