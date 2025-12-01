@@ -181,42 +181,37 @@ runs:
         echo "Payload prepared:"
         cat "$PAYLOAD_FILE" | jq '.'
 
-        # Prepare headers
-        HEADERS=(-H "Content-Type: application/json")
+        # Send POST request to YouTrack webhook
         if [ -n "${{ inputs.youtrackToken }}" ]; then
-          HEADERS+=(-H "Authorization: Bearer ${{ inputs.youtrackToken }}")
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ inputs.youtrackToken }}" \
+            -d "@$PAYLOAD_FILE" \
+            "${{ inputs.callbackUrl }}")
+        else
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            -H "Content-Type: application/json" \
+            -d "@$PAYLOAD_FILE" \
+            "${{ inputs.callbackUrl }}")
         fi
-
-        # Send webhook
-        RESPONSE=$(curl -s -w "\n%{http_code}" \
-          -X POST \
-          "${HEADERS[@]}" \
-          -d "@$PAYLOAD_FILE" \
-          "${{ inputs.callbackUrl }}")
 
         # Clean up temp file
         rm -f "$PAYLOAD_FILE"
 
+        # Parse response
         HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
         BODY=$(echo "$RESPONSE" | sed '$d')
 
-        echo "HTTP Status: $HTTP_CODE"
-        echo "Response: $BODY"
-
         if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
           echo "✅ Successfully notified TMS App"
-          # Parse response to check if ok
-          OK=$(echo "$BODY" | jq -r '.ok // false')
-          if [ "$OK" == "true" ]; then
-            echo "✅ TMS App confirmed successful processing"
-          else
-            MESSAGE=$(echo "$BODY" | jq -r '.message // "Unknown error"')
-            echo "⚠️ TMS App returned ok=false: $MESSAGE"
-            exit 0  # Don't fail the workflow, just warn
+          if [ -n "$BODY" ]; then
+            echo "Response: $BODY"
           fi
         else
           echo "❌ Failed to notify TMS App (HTTP $HTTP_CODE)"
-          echo "$BODY" | jq '.' || echo "$BODY"
+          if [ -n "$BODY" ]; then
+            echo "Response: $BODY"
+          fi
           exit 1
         fi
 
