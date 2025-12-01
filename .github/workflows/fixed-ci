@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  workflow_dispatch:
+    inputs:
+      triggerSource:
+        description: "Source of trigger (YT issue ID, test repo, etc.)"
+        required: false
+      testCaseId:
+        description: "Original Test Case ID"
+        required: true
+      testRunId:
+        description: "Test Run ID (parent suite)"
+        required: true
+      individualTestRunId:
+        description: "Individual Test Run ID (specific test case run)"
+        required: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Run example
+        id: tests
+        run: |
+          echo "Hello from workflow"
+          # Your actual test commands here
+          # For demonstration, setting test results
+          # In production, parse your actual test output
+          echo "totalTests=5" >> $GITHUB_OUTPUT
+          echo "passedTests=3" >> $GITHUB_OUTPUT
+          echo "failedTests=2" >> $GITHUB_OUTPUT
+          echo "failedTestsList=Critical business logic test,Integration test - payment gateway" >> $GITHUB_OUTPUT
+
+      - name: Notify TMS App
+        if: always()
+        uses: ./.github/actions/notify-tms
+        with:
+          triggerSource: ${{ github.event.inputs.triggerSource }}
+          testCaseId: ${{ github.event.inputs.testCaseId }}
+          testRunId: ${{ github.event.inputs.testRunId }}
+          individualTestRunId: ${{ github.event.inputs.individualTestRunId }}
+          totalTests: ${{ steps.tests.outputs.totalTests }}
+          passedTests: ${{ steps.tests.outputs.passedTests }}
+          failedTests: ${{ steps.tests.outputs.failedTests }}
+          failedTestsList: ${{ steps.tests.outputs.failedTestsList }}
+          callbackUrl: ${{ secrets.WEBHOOK_URL }}
+          youtrackToken: ${{ secrets.YOUTRACK_TOKEN }}
+
