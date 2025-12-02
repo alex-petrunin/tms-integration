@@ -1,14 +1,37 @@
 name: Test Dispatch
 
 on:
-  workflow_dispatch:   # REQUIRED for manual/API triggering
+  workflow_dispatch:
+    inputs:
+      triggerSource:
+        description: "Source of the trigger"
+        required: true
+        type: string
+      testCaseId:
+        description: "Test case ID"
+        required: true
+        type: string
+      testRunId:
+        description: "Test run ID"
+        required: true
+        type: string
+      individualTestRunId:
+        description: "Individual test run ID"
+        required: true
+        type: string
 
 jobs:
   run:
     runs-on: ubuntu-latest
     steps:
-      - name: Print dispatch payload
+      - name: Print inputs
         run: |
-          echo "Workflow triggered by workflow_dispatch"
-          echo "Event payload:"
+          echo "triggerSource: ${{ github.event.inputs.triggerSource }}"
+          echo "testCaseId: ${{ github.event.inputs.testCaseId }}"
+          echo "testRunId: ${{ github.event.inputs.testRunId }}"
+          echo "individualTestRunId: ${{ github.event.inputs.individualTestRunId }}"
+
+      - name: Print raw event payload
+        run: |
+          echo "Payload:"
           cat "$GITHUB_EVENT_PATH"
