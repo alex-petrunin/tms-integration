@@ -1,0 +1,14 @@
+name: Test Dispatch
+
+on:
+  workflow_dispatch:   # REQUIRED for manual/API triggering
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print dispatch payload
+        run: |
+          echo "Workflow triggered by workflow_dispatch"
+          echo "Event payload:"
+          cat "$GITHUB_EVENT_PATH"
