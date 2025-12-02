@@ -1,0 +1,23 @@
+name: Test Webhooks
+
+on:
+  # Listen to all events (good for generic webhook testing)
+  workflow_dispatch:
+  push:
+  issues:
+  pull_request:
+  # Or use:
+  #   on: [push]
+
+jobs:
+  test-webhook:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Print GitHub event name
+        run: echo "Event: ${{ github.event_name }}"
+
+      - name: Print full webhook payload
+        run: |
+          echo "Payload:"
+          cat $GITHUB_EVENT_PATH
