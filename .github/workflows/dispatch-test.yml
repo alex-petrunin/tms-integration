@@ -1,5 +1,11 @@
 name: Test Dispatch
 
+run-name: >
+  Triggered by: ${{ github.event.inputs.triggerSource }}
+  | Case: ${{ github.event.inputs.testCaseId }}
+  | Run: ${{ github.event.inputs.testRunId }}
+  | Individual: ${{ github.event.inputs.individualTestRunId }}
+
 on:
   workflow_dispatch:
     inputs:
